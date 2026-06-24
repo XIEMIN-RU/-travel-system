@@ -1,0 +1,199 @@
+/* =====================
+   Reset & Base
+   ===================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: 'Noto Sans TC', 'Microsoft JhengHei', Arial, sans-serif; background: #f5f6fa; color: #222; }
+
+/* =====================
+   Navbar
+   ===================== */
+.navbar {
+  height: 56px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.nav-logo { font-size: 16px; font-weight: 600; color: #1a73e8; }
+.nav-sub  { font-size: 13px; color: #888; }
+.nav-back { font-size: 13px; color: #1a73e8; text-decoration: none; margin-right: auto; }
+.nav-back:hover { text-decoration: underline; }
+.nav-meta { margin-left: auto; font-size: 12px; color: #888; }
+
+/* =====================
+   首頁 Hero
+   ===================== */
+.hero {
+  max-width: 960px;
+  margin: 48px auto;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .hero { grid-template-columns: 1fr; margin: 24px auto; }
+}
+
+/* =====================
+   表單卡片
+   ===================== */
+.form-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+}
+.form-title    { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #111; }
+.form-subtitle { font-size: 14px; color: #666; margin-bottom: 24px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.field label { font-size: 13px; font-weight: 500; color: #444; }
+.field select, .field input {
+  height: 42px;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #222;
+  background: #fafafa;
+  transition: border-color 0.2s;
+}
+.field select:focus, .field input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  background: #fff;
+}
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.submit-btn {
+  width: 100%;
+  height: 48px;
+  margin-top: 8px;
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.submit-btn:hover    { background: #1558b0; }
+.submit-btn:active   { transform: scale(0.98); }
+.submit-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+.alert-error {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* =====================
+   功能特色區
+   ===================== */
+.features { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; }
+.feature-item { display: flex; align-items: flex-start; gap: 14px; }
+.feature-icon { font-size: 28px; flex-shrink: 0; }
+.feature-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.feature-desc  { font-size: 13px; color: #666; line-height: 1.5; }
+
+/* =====================
+   結果頁 Layout
+   ===================== */
+.result-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: calc(100vh - 56px - 36px); /* 扣掉 navbar + footer */
+}
+@media (max-width: 700px) {
+  .result-layout { grid-template-columns: 1fr; height: auto; }
+  .map-container { height: 65vh; }
+}
+
+/* =====================
+   結果頁 側欄
+   ===================== */
+.result-sidebar {
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+  padding: 20px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.info-card {
+  background: #f8f9ff;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.info-label { font-size: 11px; color: #888; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+.info-value { font-size: 15px; font-weight: 600; color: #222; }
+.style-text { font-size: 13px; }
+
+.replan-btn {
+  display: block;
+  text-align: center;
+  background: #1a73e8;
+  color: #fff;
+  text-decoration: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.replan-btn:hover { background: #1558b0; }
+
+.tip-box {
+  background: #f0f7ff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+.tip-title { font-size: 13px; font-weight: 600; color: #1a73e8; margin-bottom: 6px; }
+.tip-text  { font-size: 12px; color: #555; line-height: 1.6; }
+
+/* =====================
+   地圖容器（iframe）
+   ===================== */
+.map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #e8f0e8;
+}
+.map-container iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* =====================
+   Footer
+   ===================== */
+.footer {
+  height: 36px;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #aaa;
+}

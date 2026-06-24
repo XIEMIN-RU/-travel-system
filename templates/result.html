@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ city }} {{ days }} 日遊行程</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="nav-back">← 重新規劃</a>
+    <span class="nav-logo">🗺 台灣旅遊行程規劃</span>
+    <span class="nav-meta">{{ city }}・{{ days }} 天・每天 {{ spots }} 景點</span>
+  </nav>
+
+  <div class="result-layout">
+
+    <!-- 左側資訊欄 -->
+    <aside class="result-sidebar">
+      <div class="info-card">
+        <p class="info-label">目的地</p>
+        <p class="info-value">{{ city }}</p>
+      </div>
+      <div class="info-card">
+        <p class="info-label">旅遊天數</p>
+        <p class="info-value">{{ days }} 天</p>
+      </div>
+      <div class="info-card">
+        <p class="info-label">每日景點</p>
+        <p class="info-value">{{ spots }} 個</p>
+      </div>
+      <div class="info-card">
+        <p class="info-label">旅遊風格</p>
+        <p class="info-value style-text">{{ style }}</p>
+      </div>
+
+      <a href="/" class="replan-btn">🔄 重新規劃</a>
+
+      <div class="tip-box">
+        <p class="tip-title">💡 使用提示</p>
+        <p class="tip-text">點擊地圖上的標記可查看景點詳情，底部卡片可點擊飛到對應位置</p>
+        <p class="tip-text" style="margin-top:6px">📍 可在地圖左上角面板新增自訂景點</p>
+      </div>
+    </aside>
+
+    <!-- 右側地圖 iframe -->
+    <div class="map-container">
+      <iframe
+        id="map-frame"
+        src="/map/{{ map_id }}"
+        width="100%"
+        height="100%"
+        frameborder="0"
+        allowfullscreen>
+      </iframe>
+    </div>
+
+  </div>
+
+  <footer class="footer">
+    資料來源：交通部觀光署 Open Data｜F114152104 謝旻儒
+  </footer>
+</body>
+</html>

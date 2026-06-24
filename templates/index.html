@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台灣旅遊行程規劃</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="navbar">
+    <span class="nav-logo">🗺 台灣旅遊行程規劃</span>
+    <span class="nav-sub">Taiwan Travel Planner</span>
+  </nav>
+
+  <main class="hero">
+    <div class="form-card">
+      <h1 class="form-title">規劃你的台灣之旅</h1>
+      <p class="form-subtitle">選擇目的地與偏好，AI 自動幫你安排最佳行程</p>
+
+      {% if error %}
+      <div class="alert-error">⚠ {{ error }}</div>
+      {% endif %}
+
+      <form action="/generate" method="POST">
+
+        <div class="field">
+          <label for="city">目的地</label>
+          <select id="city" name="city" required>
+            {% for c in cities %}
+            <option value="{{ c }}" {% if c == '宜蘭縣' %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="style">旅遊風格</label>
+          <select id="style" name="style">
+            {% for s in styles %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="days">遊玩天數</label>
+            <select id="days" name="days">
+              <option value="1">1 天</option>
+              <option value="2" selected>2 天</option>
+              <option value="3">3 天</option>
+              <option value="4">4 天</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="spots">每日景點數</label>
+            <select id="spots" name="spots">
+              <option value="3" selected>3 個</option>
+              <option value="4">4 個</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">
+          <span id="btn-text">🚀 開始規劃行程</span>
+          <span id="btn-loading" style="display:none">⏳ 規劃中，請稍候…</span>
+        </button>
+
+      </form>
+    </div>
+
+    <div class="features">
+      <div class="feature-item">
+        <span class="feature-icon">📍</span>
+        <div>
+          <p class="feature-title">真實路線計算</p>
+          <p class="feature-desc">OSRM 真實道路距離，最近站自動串接</p>
+        </div>
+      </div>
+      <div class="feature-item">
+        <span class="feature-icon">🍜</span>
+        <div>
+          <p class="feature-title">餐廳自動安排</p>
+          <p class="feature-desc">午餐、下午茶、夜市一次規劃</p>
+        </div>
+      </div>
+      <div class="feature-item">
+        <span class="feature-icon">🏨</span>
+        <div>
+          <p class="feature-title">住宿智慧推薦</p>
+          <p class="feature-desc">依當日最後景點位置推薦最近住宿</p>
+        </div>
+      </div>
+      <div class="feature-item">
+        <span class="feature-icon">✏️</span>
+        <div>
+          <p class="feature-title">自訂景點新增</p>
+          <p class="feature-desc">貼上 Google Maps 連結即可插入行程</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    資料來源：交通部觀光署 Open Data｜F114152104 謝旻儒
+  </footer>
+
+  <script>
+    document.querySelector('form').addEventListener('submit', function() {
+      document.getElementById('btn-text').style.display = 'none';
+      document.getElementById('btn-loading').style.display = 'inline';
+      document.getElementById('submit-btn').disabled = true;
+    });
+  </script>
+</body>
+</html>
