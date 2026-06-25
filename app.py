@@ -590,17 +590,22 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             var spots = tourData[day].spots;
             var insertAt = findInsertIndex(day, coord.lat, coord.lon);
 
+            // 產生唯一 spot_id（供 AI 快取與 marker 登錄使用）
+            var customSpotId = 'custom_' + Date.now();
+
             // 插入新景點
             spots.splice(insertAt, 0, {{
-                lat:   coord.lat,
-                lon:   coord.lon,
-                name:  name,
-                title: '第' + (insertAt + 1) + '站：自訂',
-                nav:   'https://www.google.com/maps/dir/?api=1&destination=' + coord.lat + ',' + coord.lon,
-                icon:  'star',
-                color: 'pink',
-                desc:  '使用者自訂景點',
-                img:   ''
+                lat:      coord.lat,
+                lon:      coord.lon,
+                name:     name,
+                title:    '第' + (insertAt + 1) + '站：自訂',
+                nav:      'https://www.google.com/maps/dir/?api=1&destination=' + coord.lat + ',' + coord.lon,
+                icon:     'star',
+                color:    'pink',
+                desc:     '使用者自訂景點',
+                img:      '',
+                spot_id:  customSpotId,
+                spot_type:'景點'
             }});
 
             // 重新編號所有站
@@ -611,12 +616,15 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             // 重新渲染當天地圖與卡片
             switchDay(day);
 
+            // 觸發 AI 導覽（背景非同步，完成後自動更新 popup）
+            fetchAiDesc({{ spot_id: customSpotId, name: name, spot_type: '景點' }});
+
             // 清空輸入
             document.getElementById('custom-url').value = '';
             document.getElementById('custom-name').value = '';
             document.getElementById('custom-preview').textContent = '';
             msg.style.color = '#2e7d32';
-            msg.textContent = '✓ 已加入第 ' + day + ' 天第 ' + (insertAt+1) + ' 站！';
+            msg.textContent = '✓ 已加入第 ' + day + ' 天第 ' + (insertAt+1) + ' 站！AI 導覽產生中…';
 
             // 3秒後清除提示
             setTimeout(function() {{ msg.textContent = ''; }}, 3000);
