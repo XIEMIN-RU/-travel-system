@@ -12,8 +12,9 @@ import time
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'taiwan-travel-dev-key')
 
-# 暫存地圖 HTML（key=uuid, value=html字串）
-map_store = {}
+# 暫存地圖 HTML 存成檔案，避免多 worker / 重啟後消失
+MAP_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'map_cache')
+os.makedirs(MAP_CACHE_DIR, exist_ok=True)
 
 # ==========================================
 # 0. 全域設定
@@ -709,9 +710,11 @@ def generate():
                                styles=list(STYLE_MAP.keys()),
                                error=map_html or '資料不足，請換個城市試試')
 
-    # 暫存地圖，產生唯一 ID
+    # 暫存地圖存成檔案（worker 間共用，重啟前不消失）
     map_id = str(uuid.uuid4())
-    map_store[map_id] = map_html
+    map_path = os.path.join(MAP_CACHE_DIR, f'{map_id}.html')
+    with open(map_path, 'w', encoding='utf-8') as f:
+        f.write(map_html)
 
     return render_template('result.html',
                            map_id=map_id,
@@ -723,10 +726,15 @@ def generate():
 
 @app.route('/map/<map_id>')
 def serve_map(map_id):
-    html = map_store.get(map_id)
-    if not html:
+    # 安全性：只允許 uuid 格式，防止路徑穿越
+    import re
+    if not re.match(r'^[0-9a-f-]{36}$', map_id):
+        return '無效的地圖 ID', 400
+    map_path = os.path.join(MAP_CACHE_DIR, f'{map_id}.html')
+    if not os.path.exists(map_path):
         return '地圖已過期，請重新規劃', 404
-    return html
+    with open(map_path, 'r', encoding='utf-8') as f:
+        return f.read()
 
 
 if __name__ == '__main__':
