@@ -17,7 +17,7 @@ from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'taiwan-travel-dev-key')
@@ -30,24 +30,9 @@ os.makedirs(MAP_CACHE_DIR, exist_ok=True)
 SAVED_ITINERARY_DIR = os.path.join(os.path.dirname(__file__), 'saved_itineraries')
 os.makedirs(SAVED_ITINERARY_DIR, exist_ok=True)
 
-# 嘗試註冊繁體中文字型
-def _register_cjk_font():
-    candidates = [
-        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
-        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-        '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            try:
-                pdfmetrics.registerFont(TTFont('CJK', path))
-                return 'CJK'
-            except Exception:
-                pass
-    return 'Helvetica'
-
-CJK_FONT = _register_cjk_font()
+# 使用 ReportLab 內建 CID 中文字型（不需要系統字型檔，Render 也能用）
+pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+CJK_FONT = 'STSong-Light'
 
 # ==========================================
 # 0. 全域設定
@@ -1072,16 +1057,16 @@ def export_pdf(save_id):
         textColor=colors.HexColor('#888888'), spaceAfter=2
     )
 
-    story.append(Paragraph(f'🗺 {city} {days} 日遊行程', title_style))
+    story.append(Paragraph(f'{city} {days} 日遊行程', title_style))
     story.append(Paragraph(f'旅遊風格：{style}　　儲存時間：{saved_at}', sub_style))
     story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1565C0'), spaceAfter=10))
 
     # 型別中文對應
     type_labels = {
-        'attr':  '🏛 景點',
-        'meal':  '🍜 午餐',
-        'snack': '☕ 午茶',
-        'hotel': '🏨 住宿',
+        'attr':  '[景點]',
+        'meal':  '[午餐]',
+        'snack': '[午茶]',
+        'hotel': '[住宿]',
     }
     color_map = {
         'attr':  colors.HexColor('#1565C0'),
@@ -1104,8 +1089,8 @@ def export_pdf(save_id):
             title    = spot.get('title', '')
             desc     = spot.get('desc', '')
             nav      = spot.get('nav', '')
-            lat      = spot.get('lat', '')
-            lon      = spot.get('lon', '')
+            lat      = spot.get('lat') or 0.0
+            lon      = spot.get('lon') or 0.0
             icon_color = spot.get('color', 'blue')
 
             # 判斷型別
@@ -1118,7 +1103,7 @@ def export_pdf(save_id):
             else:
                 stype = 'attr'
 
-            label = type_labels.get(stype, '📍 行程')
+            label = type_labels.get(stype, '[行程]')
             dot_color = color_map.get(stype, colors.HexColor('#1565C0'))
 
             # 用 Table 做色塊左邊線效果
@@ -1129,8 +1114,8 @@ def export_pdf(save_id):
                     ParagraphStyle('rp', fontName=f, fontSize=11, leading=16)
                 ),
                 Paragraph(
-                    f'<font color="#999999" size="8">📍 {lat:.4f}, {lon:.4f}</font><br/>'
-                    f'<font color="#1976D2" size="8">導航</font>',
+                    f'<font color="#999999" size="8">{lat:.4f}, {lon:.4f}</font><br/>'
+                    f'<font color="#1976D2" size="8">Google Maps 導航</font>',
                     ParagraphStyle('rr', fontName=f, fontSize=8, leading=12, alignment=2)
                 )
             ]]
