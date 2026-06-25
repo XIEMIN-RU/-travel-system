@@ -623,6 +623,11 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
         }}
 
         // ==========================================
+        // Gemini AI 描述快取（宣告在 switchDay 之前，讓回填迴圈可存取）
+        // ==========================================
+        var aiDescCache = {{}};   // spot_id -> desc
+
+        // ==========================================
         // 原有行程切換邏輯
         // ==========================================
         function switchDay(dayNum) {{
@@ -673,27 +678,35 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             data.spots.forEach(spot => {{
                 var imgStyle = spot.img ? `background-image: url('${{spot.img}}');` : 'background: #eee;';
 
-                // 底部卡片：加 AI 說明欄位
+                // 底部卡片：AI 導覽文字移至地圖 popup，卡片只顯示標題與名稱
                 var card = `
                 <div class="card" style="border-left-color: ${{spot.color}}">
                     <div class="card-img" style="${{imgStyle}}"></div>
-                    <div class="card-info" onclick="mapObject.flyTo([${{spot.lat}}, ${{spot.lon}}], 16)">
+                    <div class="card-info" onclick="mapObject.flyTo([${{spot.lat}}, ${{spot.lon}}], 16)" title="點擊地圖圖示可看 AI 導覽">
                         <div style="font-size:11px; font-weight:bold; color:${{spot.color}}">${{spot.title}}</div>
                         <div style="font-size:13px; font-weight:bold; color:#333;">${{spot.name}}</div>
-                        <div id="card_ai_${{spot.spot_id}}" style="font-size:11px;color:#1565C0;margin-top:2px;">✨ 載入中…</div>
+                        <div style="font-size:10px; color:#aaa; margin-top:2px;">📍 點地圖查看 AI 導覽</div>
                     </div>
                     <a href="${{spot.nav}}" target="_blank" class="nav-btn">GO</a>
                 </div>
                 `;
                 container.innerHTML += card;
             }});
+
+            // 【修正】換天後重建 DOM，把快取中已有的 AI 文字立刻回填，
+            // 避免切換回已載入的天數時又顯示「載入中…」
+            data.spots.forEach(function(spot) {{
+                if (aiDescCache[spot.spot_id]) {{
+                    applyAiDesc(spot.spot_id, aiDescCache[spot.spot_id]);
+                }}
+            }});
         }}
 
         // ==========================================
         // Gemini AI 背景逐一載入
         // ==========================================
-        var aiDescCache = {{}};   // spot_id -> desc 快取，換天不重複呼叫
-        var aiCity = '';          // 由 Python 注入，見下方
+        // aiDescCache 已在上方宣告
+        // aiCity 已在上方由 Python 注入，此處不再重複宣告
 
         async function fetchAiDesc(spot) {{
             if (aiDescCache[spot.spot_id]) {{
@@ -720,12 +733,9 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
         }}
 
         function applyAiDesc(spotId, desc) {{
-            // 更新 popup 內的 AI 區塊
+            // 只更新 popup 內的 AI 區塊，底部卡片不顯示 AI 文字（避免撐高卡片）
             var popupEl = document.getElementById('ai_' + spotId);
             if (popupEl) popupEl.innerHTML = '✨ ' + desc;
-            // 更新底部卡片
-            var cardEl = document.getElementById('card_ai_' + spotId);
-            if (cardEl) cardEl.textContent = desc;
         }}
 
         async function loadAllAiDescs() {{
@@ -825,7 +835,7 @@ def ai_desc():
     prompt = (
         f"你是台灣在地旅遊導覽員，用繁體中文寫一段關於「{name}」的簡短介紹。"
         f"這是位於{city}的{spot_type}。"
-        f"字數50字左右，語氣活潑，突顯特色，不要用條列式。"
+        f"字數控制在 50 字左右，語氣活潑，突顯特色，不要用條列式。"
     )
 
     try:
