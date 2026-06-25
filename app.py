@@ -623,13 +623,35 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
         }}
 
         // ==========================================
-        // Gemini AI 描述快取（宣告在 switchDay 之前，讓回填迴圈可存取）
+        // Gemini AI 描述快取 & Marker 登錄表
+        // aiDescCache: spot_id -> AI 文字（已取得）
+        // markerRegistry: spot_id -> Leaflet marker 物件
         // ==========================================
-        var aiDescCache = {{}};   // spot_id -> desc
+        var aiDescCache = {{}};    // spot_id -> desc string
+        var markerRegistry = {{}}; // spot_id -> L.marker
 
         // ==========================================
         // 原有行程切換邏輯
         // ==========================================
+        function buildPopupContent(spot, aiDesc) {{
+            var imgHtml = spot.img
+                ? `<img src="${{spot.img}}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:5px;">`
+                : '';
+            var aiHtml;
+            if (aiDesc) {{
+                aiHtml = `<div style="font-size:11px;color:#1565C0;margin-top:5px;line-height:1.5;">✨ ${{aiDesc}}</div>`;
+            }} else {{
+                aiHtml = `<div style="font-size:11px;color:#1565C0;margin-top:5px;line-height:1.5;"><span class="ai-loading">✨ AI 導覽載入中…</span></div>`;
+            }}
+            return `<div style="width:220px;">
+                        ${{imgHtml}}
+                        <b>${{spot.title}}</b><br>
+                        <span style="font-size:14px;font-weight:bold;">${{spot.name}}</span><br>
+                        <span style="font-size:11px;color:#666;">${{spot.desc}}</span>
+                        ${{aiHtml}}
+                    </div>`;
+        }}
+
         function switchDay(dayNum) {{
             if (!tourData[dayNum]) return;
             var data = tourData[dayNum];
@@ -639,6 +661,7 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             if(btn) btn.classList.add('active');
 
             currentLayerGroup.clearLayers();
+            markerRegistry = {{}};  // 清除舊天的 marker 登錄
 
             if (data.route && data.route.length > 0) {{
                 L.polyline(data.route, {{color: data.color, weight: 5, opacity: 0.8}}).addTo(currentLayerGroup);
@@ -649,23 +672,20 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                     icon: spot.icon, markerColor: spot.color, prefix: 'fa', iconColor: 'white'
                 }});
 
-                var imgHtml = spot.img ? `<img src="${{spot.img}}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:5px;">` : '';
-
-                // AI 導覽區：先顯示原始 desc，AI 完成後會替換
-                var aiHtml = `<div id="ai_${{spot.spot_id}}" style="font-size:11px;color:#1565C0;margin-top:5px;line-height:1.5;">
-                                <span class="ai-loading">✨ AI 導覽載入中…</span>
-                              </div>`;
-
-                // 地圖彈窗
-                L.marker([spot.lat, spot.lon], {{icon: myIcon}})
-                    .bindPopup(`<div style="width:220px;">
-                                ${{imgHtml}}
-                                <b>${{spot.title}}</b><br>
-                                <span style="font-size:14px;font-weight:bold;">${{spot.name}}</span><br>
-                                <span style="font-size:11px;color:#666;">${{spot.desc}}</span>
-                                ${{aiHtml}}
-                                </div>`)
+                // 建立 popup 時，若快取已有 AI 文字直接填入，否則顯示「載入中」
+                var marker = L.marker([spot.lat, spot.lon], {{icon: myIcon}})
+                    .bindPopup(buildPopupContent(spot, aiDescCache[spot.spot_id] || null))
                     .addTo(currentLayerGroup);
+
+                // 【修正】每次 popup 被打開時，用最新快取重新渲染內容
+                // 這樣無論 AI 是在 popup 開啟前還是後回來，都能正確顯示
+                marker.on('popupopen', (function(s) {{
+                    return function() {{
+                        this.setPopupContent(buildPopupContent(s, aiDescCache[s.spot_id] || null));
+                    }};
+                }})(spot));
+
+                markerRegistry[spot.spot_id] = marker;
             }});
 
             var container = document.getElementById('panel_container');
@@ -678,7 +698,6 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             data.spots.forEach(spot => {{
                 var imgStyle = spot.img ? `background-image: url('${{spot.img}}');` : 'background: #eee;';
 
-                // 底部卡片：AI 導覽文字移至地圖 popup，卡片只顯示標題與名稱
                 var card = `
                 <div class="card" style="border-left-color: ${{spot.color}}">
                     <div class="card-img" style="${{imgStyle}}"></div>
@@ -692,24 +711,34 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 `;
                 container.innerHTML += card;
             }});
-
-            // 【修正】換天後重建 DOM，把快取中已有的 AI 文字立刻回填，
-            // 避免切換回已載入的天數時又顯示「載入中…」
-            data.spots.forEach(function(spot) {{
-                if (aiDescCache[spot.spot_id]) {{
-                    applyAiDesc(spot.spot_id, aiDescCache[spot.spot_id]);
-                }}
-            }});
         }}
 
         // ==========================================
         // Gemini AI 背景逐一載入
         // ==========================================
-        // aiDescCache 已在上方宣告
-        // aiCity 已在上方由 Python 注入，此處不再重複宣告
+
+        // 【修正】applyAiDesc 改為透過 Leaflet marker API 更新 popup 內容，
+        // 不再用 getElementById（popup 未開啟時 DOM 不存在，寫入會靜默失敗）
+        function applyAiDesc(spotId, desc) {{
+            aiDescCache[spotId] = desc;
+            // 若此 marker 目前在地圖上（同一天），更新它的 popup content
+            var marker = markerRegistry[spotId];
+            if (marker) {{
+                // 找到對應的 spot 物件，重新組裝 popup
+                for (var day in tourData) {{
+                    var found = tourData[day].spots.find(function(s) {{ return s.spot_id === spotId; }});
+                    if (found) {{
+                        var newContent = buildPopupContent(found, desc);
+                        marker.setPopupContent(newContent);
+                        break;
+                    }}
+                }}
+            }}
+        }}
 
         async function fetchAiDesc(spot) {{
             if (aiDescCache[spot.spot_id]) {{
+                // 快取命中：確保 marker popup 是最新狀態（例如換天後重建的 marker）
                 applyAiDesc(spot.spot_id, aiDescCache[spot.spot_id]);
                 return;
             }}
@@ -725,17 +754,10 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 }});
                 var data = await resp.json();
                 var desc = data.desc || '';
-                aiDescCache[spot.spot_id] = desc;
                 applyAiDesc(spot.spot_id, desc);
             }} catch(e) {{
                 applyAiDesc(spot.spot_id, '（導覽暫時無法載入）');
             }}
-        }}
-
-        function applyAiDesc(spotId, desc) {{
-            // 只更新 popup 內的 AI 區塊，底部卡片不顯示 AI 文字（避免撐高卡片）
-            var popupEl = document.getElementById('ai_' + spotId);
-            if (popupEl) popupEl.innerHTML = '✨ ' + desc;
         }}
 
         async function loadAllAiDescs() {{
