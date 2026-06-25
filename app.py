@@ -835,7 +835,7 @@ def ai_desc():
         )
         payload = {
             'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'maxOutputTokens': 150, 'temperature': 0.7}
+            'generationConfig': {'maxOutputTokens': 1500, 'temperature': 0.7}
         }
         resp = requests.post(url, json=payload, timeout=15)
         resp.raise_for_status()
