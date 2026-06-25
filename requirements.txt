@@ -5,6 +5,7 @@ folium==0.17.0
 geopy==2.4.1
 pandas==2.2.2
 requests==2.32.3
+reportlab   
 
 certifi==2026.4.22
 charset-normalizer==3.4.7
