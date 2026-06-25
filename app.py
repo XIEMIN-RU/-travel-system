@@ -358,7 +358,15 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 color = 'blue'; icon = 'camera'
 
             nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-            
+
+            # spot_type 供 Gemini prompt 使用
+            if st == 'hotel':
+                spot_type = '住宿'
+            elif st in ('meal', 'snack'):
+                spot_type = '餐廳'
+            else:
+                spot_type = '景點'
+
             day_spots.append({
                 'lat': lat, 'lon': lon,
                 'name': name,
@@ -367,7 +375,9 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 'icon': icon,
                 'color': color,
                 'desc': desc,
-                'img': img_url
+                'img': img_url,
+                'spot_id': f"d{day}s{len(day_spots)}",
+                'spot_type': spot_type
             })
             
         for i in range(len(day_spots)-1):
@@ -483,11 +493,15 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
         var tourData = {js_data_str};
         var mapObject = null;
         var currentLayerGroup = null;
+        var aiCity = '{city}';   // 由 Python 注入，供 Gemini prompt 使用
 
         window.onload = function() {{
             mapObject = {map_var};
             currentLayerGroup = L.layerGroup().addTo(mapObject);
-            setTimeout(function() {{ switchDay(1); }}, 500);
+            setTimeout(function() {{
+                switchDay(1);
+                loadAllAiDescs();   // 地圖就緒後開始背景載入 AI 導覽
+            }}, 800);
         }};
 
         // ==========================================
@@ -629,37 +643,44 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 var myIcon = L.AwesomeMarkers.icon({{
                     icon: spot.icon, markerColor: spot.color, prefix: 'fa', iconColor: 'white'
                 }});
-                
+
                 var imgHtml = spot.img ? `<img src="${{spot.img}}" style="width:100%;height:120px;object-fit:cover;border-radius:4px;margin-bottom:5px;">` : '';
-                
-                // 地圖彈窗：保留完整資訊
+
+                // AI 導覽區：先顯示原始 desc，AI 完成後會替換
+                var aiHtml = `<div id="ai_${{spot.spot_id}}" style="font-size:11px;color:#1565C0;margin-top:5px;line-height:1.5;">
+                                <span class="ai-loading">✨ AI 導覽載入中…</span>
+                              </div>`;
+
+                // 地圖彈窗
                 L.marker([spot.lat, spot.lon], {{icon: myIcon}})
-                    .bindPopup(`<div style="width:200px;">
+                    .bindPopup(`<div style="width:220px;">
                                 ${{imgHtml}}
                                 <b>${{spot.title}}</b><br>
                                 <span style="font-size:14px;font-weight:bold;">${{spot.name}}</span><br>
                                 <span style="font-size:11px;color:#666;">${{spot.desc}}</span>
+                                ${{aiHtml}}
                                 </div>`)
                     .addTo(currentLayerGroup);
             }});
 
             var container = document.getElementById('panel_container');
             container.innerHTML = '';
-            
+
             if (data.spots.length > 0) {{
                 mapObject.flyTo([data.spots[0].lat, data.spots[0].lon], 13);
             }}
 
             data.spots.forEach(spot => {{
-                var imgStyle = spot.img ? `background-image: url('${{spot.img}}');` : 'background: #eee; text-align:center; line-height:80px; color:#aaa; font-size:10px; content:"無圖片";';
-                
-                // 底部卡片：簡潔化，移除介紹文
+                var imgStyle = spot.img ? `background-image: url('${{spot.img}}');` : 'background: #eee;';
+
+                // 底部卡片：加 AI 說明欄位
                 var card = `
                 <div class="card" style="border-left-color: ${{spot.color}}">
                     <div class="card-img" style="${{imgStyle}}"></div>
                     <div class="card-info" onclick="mapObject.flyTo([${{spot.lat}}, ${{spot.lon}}], 16)">
                         <div style="font-size:11px; font-weight:bold; color:${{spot.color}}">${{spot.title}}</div>
                         <div style="font-size:13px; font-weight:bold; color:#333;">${{spot.name}}</div>
+                        <div id="card_ai_${{spot.spot_id}}" style="font-size:11px;color:#1565C0;margin-top:2px;">✨ 載入中…</div>
                     </div>
                     <a href="${{spot.nav}}" target="_blank" class="nav-btn">GO</a>
                 </div>
@@ -667,6 +688,58 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                 container.innerHTML += card;
             }});
         }}
+
+        // ==========================================
+        // Gemini AI 背景逐一載入
+        // ==========================================
+        var aiDescCache = {{}};   // spot_id -> desc 快取，換天不重複呼叫
+        var aiCity = '';          // 由 Python 注入，見下方
+
+        async function fetchAiDesc(spot) {{
+            if (aiDescCache[spot.spot_id]) {{
+                applyAiDesc(spot.spot_id, aiDescCache[spot.spot_id]);
+                return;
+            }}
+            try {{
+                var resp = await fetch('/ai_desc', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        name:      spot.name,
+                        city:      aiCity,
+                        spot_type: spot.spot_type || '景點'
+                    }})
+                }});
+                var data = await resp.json();
+                var desc = data.desc || '';
+                aiDescCache[spot.spot_id] = desc;
+                applyAiDesc(spot.spot_id, desc);
+            }} catch(e) {{
+                applyAiDesc(spot.spot_id, '（導覽暫時無法載入）');
+            }}
+        }}
+
+        function applyAiDesc(spotId, desc) {{
+            // 更新 popup 內的 AI 區塊
+            var popupEl = document.getElementById('ai_' + spotId);
+            if (popupEl) popupEl.innerHTML = '✨ ' + desc;
+            // 更新底部卡片
+            var cardEl = document.getElementById('card_ai_' + spotId);
+            if (cardEl) cardEl.textContent = desc;
+        }}
+
+        async function loadAllAiDescs() {{
+            // 逐一呼叫，每次間隔 800ms 避免超過免費額度速率限制
+            for (var day in tourData) {{
+                var spots = tourData[day].spots;
+                for (var i = 0; i < spots.length; i++) {{
+                    await fetchAiDesc(spots[i]);
+                    await new Promise(r => setTimeout(r, 800));
+                }}
+            }}
+        }}
+
+        // 頁面載入後由 window.onload 呼叫 switchDay(1) 與 loadAllAiDescs()
     </script>
     """
     
@@ -735,6 +808,42 @@ def serve_map(map_id):
         return '地圖已過期，請重新規劃', 404
     with open(map_path, 'r', encoding='utf-8') as f:
         return f.read()
+
+
+@app.route('/ai_desc', methods=['POST'])
+def ai_desc():
+    """接收景點名稱與城市，回傳 Gemini 生成的導覽介紹"""
+    data     = request.get_json()
+    name     = data.get('name', '')
+    city     = data.get('city', '')
+    spot_type = data.get('spot_type', '景點')  # 景點 / 餐廳 / 住宿
+
+    api_key = os.environ.get('GEMINI_API_KEY', '')
+    if not api_key:
+        return jsonify({'desc': '（AI 導覽未啟用）'})
+
+    prompt = (
+        f"你是台灣在地旅遊導覽員，用繁體中文寫一段關於「{name}」的簡短介紹。"
+        f"這是位於{city}的{spot_type}。"
+        f"字數控制在 50 字以內，語氣活潑，突顯特色，不要用條列式。"
+    )
+
+    try:
+        url = (
+            'https://generativelanguage.googleapis.com/v1beta/models/'
+            f'gemini-2.5-flash:generateContent?key={api_key}'
+        )
+        payload = {
+            'contents': [{'parts': [{'text': prompt}]}],
+            'generationConfig': {'maxOutputTokens': 150, 'temperature': 0.7}
+        }
+        resp = requests.post(url, json=payload, timeout=15)
+        resp.raise_for_status()
+        result = resp.json()
+        desc = (result['candidates'][0]['content']['parts'][0]['text']).strip()
+        return jsonify({'desc': desc})
+    except Exception as e:
+        return jsonify({'desc': '（導覽載入失敗）', 'error': str(e)}), 200
 
 
 if __name__ == '__main__':
