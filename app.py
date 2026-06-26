@@ -4,20 +4,10 @@ import pandas as pd
 import folium
 from folium.plugins import MarkerCluster
 from geopy.distance import geodesic
-from flask import Flask, render_template, request, jsonify, session, send_file
+from flask import Flask, render_template, request, jsonify, session
 import requests
 import os
 import time
-import io
-
-# PDF
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.units import cm
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'taiwan-travel-dev-key')
@@ -25,14 +15,6 @@ app.secret_key = os.environ.get('SECRET_KEY', 'taiwan-travel-dev-key')
 # 暫存地圖 HTML 存成檔案，避免多 worker / 重啟後消失
 MAP_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'map_cache')
 os.makedirs(MAP_CACHE_DIR, exist_ok=True)
-
-# 儲存行程 JSON 的目錄
-SAVED_ITINERARY_DIR = os.path.join(os.path.dirname(__file__), 'saved_itineraries')
-os.makedirs(SAVED_ITINERARY_DIR, exist_ok=True)
-
-# 使用 ReportLab 內建 CID 中文字型（不需要系統字型檔，Render 也能用）
-pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-CJK_FONT = 'STSong-Light'
 
 # ==========================================
 # 0. 全域設定
@@ -452,23 +434,6 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
             插入行程
         </button>
         <div id="custom-msg" style="font-size:11px; margin-top:5px; min-height:16px;"></div>
-
-        <hr style="margin:10px 0; border:none; border-top:1px solid #eee;">
-
-        <div style="font-weight:bold; font-size:13px; margin-bottom:8px;">💾 儲存 &amp; 匯出</div>
-        <button onclick="saveItinerary()"
-            style="width:100%; background:#43A047; color:white; border:none;
-                   padding:7px; border-radius:5px; cursor:pointer; font-size:12px;
-                   font-weight:bold; margin-bottom:6px;">
-            💾 儲存行程
-        </button>
-        <button id="export-pdf-btn" onclick="exportPDF()" disabled
-            style="width:100%; background:#8E24AA; color:white; border:none;
-                   padding:7px; border-radius:5px; cursor:pointer; font-size:12px;
-                   font-weight:bold; opacity:0.5;">
-            📄 匯出 PDF
-        </button>
-        <div id="save-msg" style="font-size:11px; margin-top:5px; min-height:16px;"></div>
     </div>
 
     <style>
@@ -663,54 +628,6 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
 
             // 3秒後清除提示
             setTimeout(function() {{ msg.textContent = ''; }}, 3000);
-        }}
-
-        // ==========================================
-        // 儲存行程 & 匯出 PDF
-        // ==========================================
-        var currentSaveId = null;   // 儲存後的 save_id
-
-        async function saveItinerary() {{
-            var msg = document.getElementById('save-msg');
-            var pdfBtn = document.getElementById('export-pdf-btn');
-            msg.style.color = '#555';
-            msg.textContent = '⏳ 儲存中…';
-            try {{
-                var resp = await fetch('/save_itinerary', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        city:      aiCity,
-                        days:      Object.keys(tourData).length,
-                        style:     '',
-                        tour_data: tourData
-                    }})
-                }});
-                var data = await resp.json();
-                if (data.save_id) {{
-                    currentSaveId = data.save_id;
-                    msg.style.color = '#2e7d32';
-                    msg.textContent = '✓ 已儲存！可按下方按鈕匯出 PDF';
-                    pdfBtn.disabled = false;
-                    pdfBtn.style.opacity = '1';
-                }} else {{
-                    msg.style.color = '#c62828';
-                    msg.textContent = '✗ 儲存失敗：' + (data.error || '未知錯誤');
-                }}
-            }} catch(e) {{
-                msg.style.color = '#c62828';
-                msg.textContent = '✗ 連線錯誤，請重試';
-            }}
-        }}
-
-        function exportPDF() {{
-            if (!currentSaveId) {{ alert('請先點「儲存行程」再匯出 PDF'); return; }}
-            var msg = document.getElementById('save-msg');
-            msg.style.color = '#6a1b9a';
-            msg.textContent = '📄 PDF 生成中，請稍候…';
-            // 直接跳轉下載
-            window.location.href = '/export_pdf/' + currentSaveId;
-            setTimeout(function() {{ msg.textContent = '✓ 已下載 PDF！'; }}, 2000);
         }}
 
         // ==========================================
@@ -967,192 +884,6 @@ def ai_desc():
         return jsonify({'desc': desc})
     except Exception as e:
         return jsonify({'desc': '（導覽載入失敗）', 'error': str(e)}), 200
-
-
-# ==========================================
-# 7. 行程儲存 & 匯出 PDF
-# ==========================================
-
-@app.route('/save_itinerary', methods=['POST'])
-def save_itinerary():
-    """
-    接收前端傳來的 tourData JSON，儲存成檔案，回傳 save_id。
-    Body: { city, days, style, tour_data: {...} }
-    """
-    body = request.get_json(silent=True) or {}
-    tour_data = body.get('tour_data')
-    if not tour_data:
-        return jsonify({'error': '缺少行程資料'}), 400
-
-    save_id = str(uuid.uuid4())
-    payload = {
-        'save_id': save_id,
-        'city':    body.get('city', ''),
-        'days':    body.get('days', 1),
-        'style':   body.get('style', ''),
-        'saved_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'tour_data': tour_data
-    }
-    path = os.path.join(SAVED_ITINERARY_DIR, f'{save_id}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    return jsonify({'save_id': save_id, 'message': '行程已儲存！'})
-
-
-@app.route('/export_pdf/<save_id>')
-def export_pdf(save_id):
-    """
-    根據 save_id 讀取已儲存的行程 JSON，用 ReportLab 生成 PDF 並回傳下載。
-    若帶 query param ?tour_data=... 則直接用傳入資料（不需先 save）。
-    """
-    import re
-    if not re.match(r'^[0-9a-f-]{36}$', save_id):
-        return '無效的行程 ID', 400
-
-    path = os.path.join(SAVED_ITINERARY_DIR, f'{save_id}.json')
-    if not os.path.exists(path):
-        return '行程不存在或已過期', 404
-
-    with open(path, 'r', encoding='utf-8') as f:
-        payload = json.load(f)
-
-    city      = payload.get('city', '')
-    days      = payload.get('days', 1)
-    style     = payload.get('style', '')
-    saved_at  = payload.get('saved_at', '')
-    tour_data = payload.get('tour_data', {})
-
-    # ---- 產生 PDF ----
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        rightMargin=2*cm, leftMargin=2*cm,
-        topMargin=2*cm,   bottomMargin=2*cm,
-    )
-
-    f = CJK_FONT
-    story = []
-
-    # 標題
-    title_style = ParagraphStyle(
-        'title', fontName=f, fontSize=20, leading=28,
-        textColor=colors.HexColor('#1565C0'), spaceAfter=6
-    )
-    sub_style = ParagraphStyle(
-        'sub', fontName=f, fontSize=10, leading=14,
-        textColor=colors.HexColor('#666666'), spaceAfter=4
-    )
-    day_header_style = ParagraphStyle(
-        'dayh', fontName=f, fontSize=14, leading=20, spaceBefore=14,
-        textColor=colors.HexColor('#0D47A1'), spaceAfter=4, fontWeight='bold'
-    )
-    spot_title_style = ParagraphStyle(
-        'spott', fontName=f, fontSize=11, leading=15,
-        textColor=colors.HexColor('#333333'), spaceBefore=4
-    )
-    spot_desc_style = ParagraphStyle(
-        'spotd', fontName=f, fontSize=9, leading=13,
-        textColor=colors.HexColor('#888888'), spaceAfter=2
-    )
-
-    story.append(Paragraph(f'{city} {days} 日遊行程', title_style))
-    story.append(Paragraph(f'旅遊風格：{style}　　儲存時間：{saved_at}', sub_style))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1565C0'), spaceAfter=10))
-
-    # 型別中文對應
-    type_labels = {
-        'attr':  '[景點]',
-        'meal':  '[午餐]',
-        'snack': '[午茶]',
-        'hotel': '[住宿]',
-    }
-    color_map = {
-        'attr':  colors.HexColor('#1565C0'),
-        'meal':  colors.HexColor('#C62828'),
-        'snack': colors.HexColor('#E65100'),
-        'hotel': colors.HexColor('#2E7D32'),
-    }
-
-    for d in range(1, days + 1):
-        day_info = tour_data.get(str(d)) or tour_data.get(d)
-        if not day_info:
-            continue
-        spots = day_info.get('spots', [])
-
-        story.append(Paragraph(f'第 {d} 天', day_header_style))
-        story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#BBDEFB'), spaceAfter=6))
-
-        for idx, spot in enumerate(spots, 1):
-            name     = spot.get('name', '')
-            title    = spot.get('title', '')
-            desc     = spot.get('desc', '')
-            nav      = spot.get('nav', '')
-            lat      = spot.get('lat') or 0.0
-            lon      = spot.get('lon') or 0.0
-            icon_color = spot.get('color', 'blue')
-
-            # 判斷型別
-            if '住宿' in title:
-                stype = 'hotel'
-            elif '午餐' in title or '晚餐' in title or '用餐' in title:
-                stype = 'meal'
-            elif '午茶' in title or '點心' in title:
-                stype = 'snack'
-            else:
-                stype = 'attr'
-
-            label = type_labels.get(stype, '[行程]')
-            dot_color = color_map.get(stype, colors.HexColor('#1565C0'))
-
-            # 用 Table 做色塊左邊線效果
-            row_data = [[
-                Paragraph(
-                    f'<font color="#555555" size="8">{label}</font><br/>'
-                    f'<font size="11"><b>{title} {name}</b></font>',
-                    ParagraphStyle('rp', fontName=f, fontSize=11, leading=16)
-                ),
-                Paragraph(
-                    f'<font color="#999999" size="8">{lat:.4f}, {lon:.4f}</font><br/>'
-                    f'<font color="#1976D2" size="8">Google Maps 導航</font>',
-                    ParagraphStyle('rr', fontName=f, fontSize=8, leading=12, alignment=2)
-                )
-            ]]
-            tbl = Table(row_data, colWidths=[13*cm, 4*cm])
-            tbl.setStyle(TableStyle([
-                ('BACKGROUND',   (0,0), (-1,-1), colors.HexColor('#F5F9FF')),
-                ('LEFTPADDING',  (0,0), (-1,-1), 10),
-                ('RIGHTPADDING', (0,0), (-1,-1), 6),
-                ('TOPPADDING',   (0,0), (-1,-1), 6),
-                ('BOTTOMPADDING',(0,0), (-1,-1), 6),
-                ('LINEAFTER',    (0,0), (0,-1), 0),
-                ('LINEBEFORE',   (0,0), (0,-1), 4, dot_color),
-                ('ROWBACKGROUNDS',(0,0),(-1,-1),[colors.HexColor('#F5F9FF')]),
-                ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
-            ]))
-            story.append(tbl)
-
-            if desc and desc != '使用者自訂景點':
-                story.append(Paragraph(desc, spot_desc_style))
-            story.append(Spacer(1, 4))
-
-        story.append(Spacer(1, 8))
-
-    # 頁尾
-    story.append(HRFlowable(width='100%', thickness=0.5, color=colors.grey, spaceBefore=10, spaceAfter=4))
-    story.append(Paragraph('由 台灣旅遊規劃助手 自動生成', ParagraphStyle('footer', fontName=f, fontSize=8, textColor=colors.grey, alignment=1)))
-
-    doc.build(story)
-    buf.seek(0)
-
-    filename = f'{city}_{days}日遊行程.pdf'
-    return send_file(
-        buf,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=filename
-    )
 
 
 if __name__ == '__main__':
