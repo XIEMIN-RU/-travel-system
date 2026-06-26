@@ -290,7 +290,7 @@ def plan_one_day(day_idx, start_pos, city_data_sets, num_spots, style_keywords, 
 # ==========================================
 # 5. 主程序：多天數地圖生成 (介面優化版)
 # ==========================================
-def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name=" 不限風格 (隨機)"):
+def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name=" 不限風格 (隨機)", plan_type="free"):
     route_cache.clear()
     
     attrs = filter_by_city(df_attr, city)
@@ -397,6 +397,7 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
     folium.Marker([0,0], icon=folium.Icon(icon='info-sign', prefix='fa')).add_to(m)
 
     js_data_str = json.dumps(js_tour_data, ensure_ascii=False)
+    is_pro = (plan_type == 'pro')
     map_var = m.get_name()
 
     day_btns_html = ""
@@ -494,13 +495,27 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
         var mapObject = null;
         var currentLayerGroup = null;
         var aiCity = '{city}';   // 由 Python 注入，供 Gemini prompt 使用
+        var isPro = {'true' if is_pro else 'false'};  // true = 進階版，false = 免費版
 
         window.onload = function() {{
             mapObject = {map_var};
             currentLayerGroup = L.layerGroup().addTo(mapObject);
             setTimeout(function() {{
                 switchDay(1);
-                loadAllAiDescs();   // 地圖就緒後開始背景載入 AI 導覽
+                if (isPro) loadAllAiDescs();   // 僅進階版啟用 AI 導覽
+
+                // 免費版：隱藏自訂景點面板，顯示升級提示
+                if (!isPro) {{
+                    var panel = document.getElementById('add-spot-panel');
+                    if (panel) {{
+                        panel.innerHTML = '<div style="text-align:center; padding:10px;">' +
+                            '<div style="font-size:13px; font-weight:bold; color:#E65100; margin-bottom:6px;">🔒 自訂景點</div>' +
+                            '<div style="font-size:11px; color:#777; margin-bottom:8px;">進階版才能新增自訂景點</div>' +
+                            '<a href="/" style="display:block; background:#FF6F00; color:white; text-decoration:none;' +
+                            ' padding:7px; border-radius:5px; font-size:12px; font-weight:bold;">✨ 升級進階版</a>' +
+                            '</div>';
+                    }}
+                }}
             }}, 800);
         }};
 
@@ -757,7 +772,8 @@ def generate_multi_day_map(city, total_days=2, num_spots_per_day=3, style_name="
                     body: JSON.stringify({{
                         name:      spot.name,
                         city:      aiCity,
-                        spot_type: spot.spot_type || '景點'
+                        spot_type: spot.spot_type || '景點',
+                        plan_type: isPro ? 'pro' : 'free'
                     }})
                 }});
                 var data = await resp.json();
@@ -809,8 +825,15 @@ def generate():
     style     = request.form.get('style', ' 不限風格 (隨機)')
     days      = int(request.form.get('days', 2))
     spots     = int(request.form.get('spots', 3))
+    plan_type = request.form.get('plan_type', 'free')   # 'free' or 'pro'
 
-    map_html = generate_multi_day_map(city, days, spots, style)
+    # 免費版限制
+    if plan_type != 'pro':
+        days  = min(days, 2)
+        spots = min(spots, 3)
+        style = ' 不限風格 (隨機)'
+
+    map_html = generate_multi_day_map(city, days, spots, style, plan_type=plan_type)
 
     # 若資料不足回傳錯誤訊息（字串不含 <html>）
     if not map_html or not map_html.strip().startswith('<!'):
@@ -834,7 +857,8 @@ def generate():
                            city=city,
                            days=days,
                            spots=spots,
-                           style=style)
+                           style=style,
+                           plan_type=plan_type)
 
 
 @app.route('/map/<map_id>')
@@ -852,8 +876,11 @@ def serve_map(map_id):
 
 @app.route('/ai_desc', methods=['POST'])
 def ai_desc():
-    """接收景點名稱與城市，回傳 Gemini 生成的導覽介紹"""
+    """接收景點名稱與城市，回傳 Gemini 生成的導覽介紹（僅進階版）"""
     data     = request.get_json()
+    # 伺服器端再次確認：只有進階版地圖才帶 plan_type=pro
+    if data.get('plan_type', 'free') != 'pro':
+        return jsonify({{'desc': '（AI 導覽為進階版功能）'}})
     name     = data.get('name', '')
     city     = data.get('city', '')
     spot_type = data.get('spot_type', '景點')  # 景點 / 餐廳 / 住宿
